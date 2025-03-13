@@ -1,0 +1,16 @@
+userId,Title of Video,Description of Video,Category ID,Comment,Sentiment
+user1,Java Basics for Beginners,Introduction to Java programming.,27,"Clear explanation and very useful!",1
+user1,Best Vegan Recipes,Delicious and easy vegan meal ideas.,26,"The recipes are fantastic loved it!",1
+user1,Top 10 Sci-Fi Movies,A list of must-watch sci-fi movies.,24,"Most of these movies are overrated.",-1
+user1,Workout Routine for Beginners,A simple workout plan to get started.,24,"Good exercises I enjoyed following along.",1
+user1,Introduction to Algorithms,Learn the basics of algorithms.,27,"Found it too complex for a beginner tutorial.",-1
+user1,Travel Vlog: Exploring Paris,A tour of famous Paris attractions.,19,"Beautiful places thanks for sharing!",1
+user1,How to Meditate for Beginners,Guide on how to start meditating.,22,"Very calming and helpful I feel relaxed.",1
+user1,Best Smartphones of 2024,A review of the latest smartphones.,28,"Not enough details on battery life.",-1
+user2,Advanced Excel Tutorial,Master advanced Excel functions and tools.,27,"Very informative helped me a lot at work!",1
+user2,10 Minute Abs Workout,Quick ab workout session for a strong core.,24,"Exercises are too hard for beginners.",-1
+user2,Understanding Stock Market Basics,Introduction to stock market investing.,25,"Clear explanation great for beginners!",1
+user2,Cooking with Spices,How to use different spices in cooking.,26,"Too many ingredients not practical.",-1
+user2,Learning Spanish in 30 Days,A quick Spanish language learning course.,27,"Good tips but needs more vocabulary practice.",-1
+user2,Top 5 Gaming Laptops of 2024,Review of the best gaming laptops.,28,"Very helpful in choosing my next laptop!",1
+user2,Dog Training Tips for Beginners,Basic training techniques for dogs.,26,"Great tips my dog is already improving!",1

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+docker build -t user-controller .
+docker tag user-controller 429105560611.dkr.ecr.us-east-1.amazonaws.com/user-controller
+docker push 429105560611.dkr.ecr.us-east-1.amazonaws.com/user-controller
+
+docker compose -f ../user-docker-compose.yaml build controller --no-cache
