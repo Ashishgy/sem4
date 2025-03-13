@@ -1,0 +1,854 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  [xLab Spring 2024 Data Sharing architecture] Stack for an entire user architecture. Represents the resources (namely the user data agent) of a single user.
+Parameters:
+  UserUniqueIdSuffix:
+    Type: String
+    Default: _u1
+    Description: The unique suffix to append to resources of this stack. (E.g. _u1 could be for User 1, _u2 for User 2, etc.)
+  VpcId:
+    Type: String
+    Default: vpc-00c285045369b86f0
+    Description: The VPC that the service is running inside of
+  ECSTaskExecutionRoleArn:
+    Type: String
+    Default: 'arn:aws:iam::429105560611:role/BensECSTaskExecutionRole'
+    Description: The role used to start up an ECS task
+  CapacityProvider:
+    Type: String
+    Default: FARGATE
+    Description: >-
+      The cluster capacity provider that the service should use to request
+      capacity when it wants to start up a task
+  ContainerCpu:
+    Type: Number
+    Default: 256
+    Description: How much CPU to give the container. 1024 is 1 CPU
+  ContainerMemory:
+    Type: Number
+    Default: 512
+    Description: How much memory in megabytes to give the container
+  DesiredCount:
+    Type: Number
+    Default: 1
+    Description: How many copies of the service task to run
+Resources:
+  # Service Discovery namespace for internal service hostname mapping:
+  DiscoveryNamespace:
+    Type: 'AWS::ServiceDiscovery::PrivateDnsNamespace'
+    Properties:
+      Name: !Sub 'user-services${UserUniqueIdSuffix}'
+      Description: User CloudMap namespace
+      Vpc: !Ref VpcId
+
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub 'user${UserUniqueIdSuffix}'
+  
+
+  MyECSLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - subnet-0f069571b9e806b6e
+        - subnet-06b86ae67399c073b
+      SecurityGroups:
+        - !GetAtt 
+          - ServiceSecurityGroup
+          - GroupId
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: MyECSLoadBalancer
+    Properties:
+      Protocol: HTTP
+      Port: 3000
+      VpcId: !Ref VpcId
+      TargetType: ip # Needed to be compatible with awsvpc network mode.
+      HealthCheckEnabled: true
+      HealthCheckPort: 3000
+      HealthCheckProtocol: 'HTTP'
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 100
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 10
+      Matcher:
+        HttpCode: '200,404'
+
+  FrontendListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+      LoadBalancerArn: !Ref MyECSLoadBalancer
+      Port: 3000
+      Protocol: HTTP
+
+
+  # DataplugTargetGroup:
+  #   Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  #   Properties:
+  #     Protocol: HTTP
+  #     Port: 8001
+  #     VpcId: !Ref VpcId
+  #     TargetType: ip
+  #     HealthCheckEnabled: true
+  #     HealthCheckPort: 8001
+  #     HealthCheckProtocol: 'HTTP'
+  #     HealthCheckPath: /
+  #     HealthCheckIntervalSeconds: 100
+  #     HealthCheckTimeoutSeconds: 10
+  #     HealthyThresholdCount: 2
+  #     UnhealthyThresholdCount: 10
+  #     Matcher:
+  #       HttpCode: '200,404'
+
+  # DataplugListener:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     DefaultActions:
+  #       - Type: forward
+  #         TargetGroupArn: !Ref DataplugTargetGroup
+  #     LoadBalancerArn: !Ref MyECSLoadBalancer
+  #     Port: 8001
+  #     Protocol: HTTP
+
+  
+  AcapyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: MyECSLoadBalancer
+    Properties:
+      Protocol: HTTP
+      Port: 8030
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPort: 8030
+      HealthCheckProtocol: 'HTTP'
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 100
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 10
+      Matcher:
+        HttpCode: '200,404,302'
+
+  AcapyListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AcapyTargetGroup
+      LoadBalancerArn: !Ref MyECSLoadBalancer
+      Port: 8030
+      Protocol: HTTP
+
+  AcapyAdminTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: MyECSLoadBalancer
+    Properties:
+      Protocol: HTTP
+      Port: 8031
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPort: 8031
+      HealthCheckProtocol: 'HTTP'
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 100
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 10
+      Matcher:
+        HttpCode: '200,404,302'
+
+  AcapyAdminListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AcapyAdminTargetGroup
+      LoadBalancerArn: !Ref MyECSLoadBalancer
+      Port: 8031
+      Protocol: HTTP
+
+
+  UserControllerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: MyECSLoadBalancer
+    Properties:
+      Protocol: HTTP
+      Port: 9080
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPort: 9080
+      HealthCheckProtocol: 'HTTP'
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 100
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 10
+      Matcher:
+        HttpCode: '200,404'
+
+  UserControllerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref UserControllerTargetGroup
+      LoadBalancerArn: !Ref MyECSLoadBalancer
+      Port: 9080
+      Protocol: HTTP
+
+  FLClientTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: MyECSLoadBalancer
+    Properties:
+      Protocol: HTTP
+      Port: 4600
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPort: 4600
+      HealthCheckProtocol: 'HTTP'
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 100
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 10
+      Matcher:
+        HttpCode: '200,404'
+
+  FLClientListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FLClientTargetGroup
+      LoadBalancerArn: !Ref MyECSLoadBalancer
+      Port: 4600
+      Protocol: HTTP
+
+
+  MyDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z03918361D2L2J3Y59M9N # sharetrace.us hosted zone.
+      Name: !Sub 'user${UserUniqueIdSuffix}.sharetrace.us'
+      Type: A
+      AliasTarget:
+        HostedZoneId: !GetAtt MyECSLoadBalancer.CanonicalHostedZoneID
+        DNSName: !GetAtt MyECSLoadBalancer.DNSName
+
+
+
+  # Acapy:
+  AcapyDiscoveryService:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      Name: acapy
+      Description: ''
+      NamespaceId: !Ref DiscoveryNamespace
+      DnsConfig:
+        DnsRecords:
+          - TTL: 60
+            Type: A
+        RoutingPolicy: MULTIVALUE
+  AcapyService:
+    Type: 'AWS::ECS::Service'
+    DependsOn: AcapyDbService
+    Properties:
+      ServiceName: Acapy
+      Cluster: !Ref ECSCluster
+      CapacityProviderStrategy:
+        - Base: 0
+          CapacityProvider: !Ref CapacityProvider
+          Weight: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt 
+              - ServiceSecurityGroup
+              - GroupId
+          Subnets:
+            - subnet-0f069571b9e806b6e
+            - subnet-06b86ae67399c073b
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref AcapyTaskDefinition
+      ServiceRegistries:
+        - RegistryArn: !GetAtt 
+            - AcapyDiscoveryService
+            - Arn
+      LoadBalancers:
+        - ContainerName: Acapy
+          ContainerPort: 8030
+          TargetGroupArn: !Ref AcapyTargetGroup
+        - ContainerName: Acapy
+          ContainerPort: 8031
+          TargetGroupArn: !Ref AcapyAdminTargetGroup
+  AcapyTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: Acapy
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+      ContainerDefinitions:
+        - Name: Acapy
+          Cpu: !Ref ContainerCpu
+          Memory: !Ref ContainerMemory
+          Image: '429105560611.dkr.ecr.us-east-1.amazonaws.com/acapy-repository'
+          PortMappings:
+            - ContainerPort: '8030'
+              HostPort: '8030'
+            - ContainerPort: '8031'
+              HostPort: '8031'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: WALLET_STORAGE_CONFIG
+              Value: !Sub '{"url":"acapy-agent-db.user-services${UserUniqueIdSuffix}:5432","max_connections":5, "wallet_scheme":"DatabasePerWallet"}'
+            - Name: ENDPOINT_URL
+              Value: !Sub 'http://user${UserUniqueIdSuffix}.sharetrace.us:8030'
+            - Name: WEBHOOK_URL
+              Value: !Sub 'http://user-controller.user-services${UserUniqueIdSuffix}:9080/webhook'
+
+
+  # Acapy Db:
+  AcapyDbDiscoveryService:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      Name: acapy-agent-db
+      Description: ''
+      NamespaceId: !Ref DiscoveryNamespace
+      DnsConfig:
+        DnsRecords:
+          - TTL: 60
+            Type: A
+        RoutingPolicy: MULTIVALUE
+  AcapyDbService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      ServiceName: AcapyDb
+      Cluster: !Ref ECSCluster
+      CapacityProviderStrategy:
+        - Base: 0
+          CapacityProvider: !Ref CapacityProvider
+          Weight: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt 
+              - ServiceSecurityGroup
+              - GroupId
+          Subnets:
+            - subnet-0f069571b9e806b6e
+            - subnet-06b86ae67399c073b
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref AcapyDbTaskDefinition
+      ServiceRegistries:
+        - RegistryArn: !GetAtt 
+            - AcapyDbDiscoveryService
+            - Arn
+  AcapyDbTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: AcapyDb
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+      ContainerDefinitions:
+        - Name: AcapyDb
+          Cpu: !Ref ContainerCpu
+          Memory: !Ref ContainerMemory
+          Image: 'public.ecr.aws/docker/library/postgres:latest'
+          PortMappings:
+            - ContainerPort: '5432'
+              HostPort: '5432'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: POSTGRES_USER
+              Value: testuser
+            - Name: POSTGRES_PASSWORD
+              Value: testpassword
+
+  
+  # User Controller:
+  UserControllerDiscoveryService:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      Name: user-controller
+      Description: ''
+      NamespaceId: !Ref DiscoveryNamespace
+      DnsConfig:
+        DnsRecords:
+          - TTL: 60
+            Type: A
+        RoutingPolicy: MULTIVALUE
+  UserControllerService:
+    Type: 'AWS::ECS::Service'
+    DependsOn: UserControllerDbService
+    Properties:
+      ServiceName: UserController
+      Cluster: !Ref ECSCluster
+      CapacityProviderStrategy:
+        - Base: 0
+          CapacityProvider: !Ref CapacityProvider
+          Weight: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt 
+              - ServiceSecurityGroup
+              - GroupId
+          Subnets:
+            - subnet-0f069571b9e806b6e
+            - subnet-06b86ae67399c073b
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref UserControllerTaskDefinition
+      ServiceRegistries:
+        - RegistryArn: !GetAtt 
+            - UserControllerDiscoveryService
+            - Arn
+      LoadBalancers:
+        - ContainerName: UserController
+          ContainerPort: 9080
+          TargetGroupArn: !Ref UserControllerTargetGroup
+  UserControllerTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: UserController
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+      ContainerDefinitions:
+        - Name: UserController
+          Cpu: !Ref ContainerCpu
+          Memory: !Ref ContainerMemory
+          Image: '429105560611.dkr.ecr.us-east-1.amazonaws.com/user-controller'
+          PortMappings:
+            - ContainerPort: '9080'
+              HostPort: '9080'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: AGENT_URL
+              Value: !Sub "http://acapy.user-services${UserUniqueIdSuffix}:8031"
+            - Name: MONGO_DB_URI
+              Value: !Sub "mongodb://user-controller-db.user-services${UserUniqueIdSuffix}:27017"
+            
+
+  # User Controller Db:
+  UserControllerDbDiscoveryService:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      Name: user-controller-db
+      Description: ''
+      NamespaceId: !Ref DiscoveryNamespace
+      DnsConfig:
+        DnsRecords:
+          - TTL: 60
+            Type: A
+        RoutingPolicy: MULTIVALUE
+  UserControllerDbService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      ServiceName: UserControllerDb
+      Cluster: !Ref ECSCluster
+      CapacityProviderStrategy:
+        - Base: 0
+          CapacityProvider: !Ref CapacityProvider
+          Weight: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt 
+              - ServiceSecurityGroup
+              - GroupId
+          Subnets:
+            - subnet-0f069571b9e806b6e
+            - subnet-06b86ae67399c073b
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref UserControllerDbTaskDefinition
+      ServiceRegistries:
+        - RegistryArn: !GetAtt 
+            - UserControllerDbDiscoveryService
+            - Arn
+  UserControllerDbTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: UserControllerDb
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+      ContainerDefinitions:
+        - Name: UserControllerDb
+          Cpu: !Ref ContainerCpu
+          Memory: !Ref ContainerMemory
+          Image: 'public.ecr.aws/docker/library/mongo:latest'
+          PortMappings:
+            - ContainerPort: '27017'
+              HostPort: '27017'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+  
+
+  # # Dataplug:
+  # DataplugDiscoveryService:
+  #   Type: 'AWS::ServiceDiscovery::Service'
+  #   Properties:
+  #     Name: dataplug
+  #     Description: ''
+  #     NamespaceId: !Ref DiscoveryNamespace
+  #     DnsConfig:
+  #       DnsRecords:
+  #         - TTL: 60
+  #           Type: A
+  #       RoutingPolicy: MULTIVALUE
+  # DataplugService:
+  #   Type: 'AWS::ECS::Service'
+  #   DependsOn: UserControllerDbService
+  #   Properties:
+  #     ServiceName: Dataplug
+  #     Cluster: !Ref ECSCluster
+  #     CapacityProviderStrategy:
+  #       - Base: 0
+  #         CapacityProvider: !Ref CapacityProvider
+  #         Weight: 1
+  #     NetworkConfiguration:
+  #       AwsvpcConfiguration:
+  #         AssignPublicIp: ENABLED
+  #         SecurityGroups:
+  #           - !GetAtt 
+  #             - ServiceSecurityGroup
+  #             - GroupId
+  #         Subnets:
+  #           - subnet-0f069571b9e806b6e
+  #           - subnet-06b86ae67399c073b
+  #     DeploymentConfiguration:
+  #       MaximumPercent: 200
+  #       MinimumHealthyPercent: 75
+  #     DesiredCount: !Ref DesiredCount
+  #     TaskDefinition: !Ref DataplugTaskDefinition
+  #     ServiceRegistries:
+  #       - RegistryArn: !GetAtt 
+  #           - DataplugDiscoveryService
+  #           - Arn
+  #     LoadBalancers:
+  #       - ContainerName: Dataplug
+  #         ContainerPort: 8001
+  #         TargetGroupArn: !Ref DataplugTargetGroup
+  # DataplugTaskDefinition:
+  #   Type: 'AWS::ECS::TaskDefinition'
+  #   Properties:
+  #     Family: Dataplug
+  #     Cpu: !Ref ContainerCpu
+  #     Memory: !Ref ContainerMemory
+  #     NetworkMode: awsvpc
+  #     RequiresCompatibilities:
+  #       - FARGATE
+  #     ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+  #     ContainerDefinitions:
+  #       - Name: Dataplug
+  #         Cpu: !Ref ContainerCpu
+  #         Memory: !Ref ContainerMemory
+  #         Image: '429105560611.dkr.ecr.us-east-1.amazonaws.com/dataplug'
+  #         PortMappings:
+  #           - ContainerPort: '8001'
+  #             HostPort: '8001'
+  #         LogConfiguration:
+  #           LogDriver: awslogs
+  #           Options:
+  #             awslogs-group: !Ref LogGroup
+  #             awslogs-region: !Ref 'AWS::Region'
+  #             awslogs-stream-prefix: ecs
+  #         Environment:
+  #           - Name: BASE_URL
+  #             Value: !Sub "http://dataplug.user-services${UserUniqueIdSuffix}:8001"
+  #           - Name: PORT
+  #             Value: 8001
+  #           - Name: METRIPORT_API_URL
+  #             Value: "https://api.metriport.com/"
+  #           - Name: METRIPORT_API_KEY # TODO API SECRET
+  #             Value: "REMOVED"
+  #           - Name: SERVICE_PROVIDER_AGENT_BASE_URL
+  #             Value: "http://host.docker.internal:8021" # TODO
+  #           - Name: INVITATION_BODY # TODO IS THIS NEEDED?
+  #             Value: "http://host.docker.internal:8020?oob=eyJAdHlwZSI6ICJkaWQ6c292OkJ6Q2JzTlloTXJqSGlxWkRUVUFTSGc7c3BlYy9vdXQtb2YtYmFuZC8xLjEvaW52aXRhdGlvbiIsICJAaWQiOiAiZTVjZGQyNjktYmEyYi00ZTgyLTllZDMtYzEyNmM3OTc4ZTdiIiwgImFjY2VwdCI6IFsiZGlkY29tbS9haXAxIiwgImRpZGNvbW0vYWlwMjtlbnY9cmZjMTkiXSwgImxhYmVsIjogIkludml0YXRpb24gdG8gQmFycnkiLCAic2VydmljZXMiOiBbeyJpZCI6ICIjaW5saW5lIiwgInR5cGUiOiAiZGlkLWNvbW11bmljYXRpb24iLCAicmVjaXBpZW50S2V5cyI6IFsiZGlkOmtleTp6Nk1rZ0dhOHhlRzRqWE5tQ3dOenBOS1RnUEhoNExtOXZLeW9KMVBYQ0dGVGZpOGkiXSwgInNlcnZpY2VFbmRwb2ludCI6ICJodHRwOi8vaG9zdC5kb2NrZXIuaW50ZXJuYWw6ODAyMCJ9XSwgImhhbmRzaGFrZV9wcm90b2NvbHMiOiBbImRpZDpzb3Y6QnpDYnNOWWhNcmpIaXFaRFRVQVNIZztzcGVjL2RpZGV4Y2hhbmdlLzEuMCJdfQ=="
+  #           - Name: MONGODB_URI
+  #             Value: !Sub "mongodb://user-controller-db.user-services${UserUniqueIdSuffix}:27017"
+  #           - Name: USER_AGENT_CONTROLLER_BASE_URL
+  #             Value: !Sub "http://user-controller.user-services${UserUniqueIdSuffix}:9080"
+
+
+  # # Dataplug Db: -- removed because container and host ports need to be the same on FARGATE, so can only have one mongodb. wanted to merge this into the other database anyways.
+  # DataplugDbDiscoveryService:
+  #   Type: 'AWS::ServiceDiscovery::Service'
+  #   Properties:
+  #     Name: dataplug-db
+  #     Description: ''
+  #     NamespaceId: !Ref DiscoveryNamespace
+  #     DnsConfig:
+  #       DnsRecords:
+  #         - TTL: 60
+  #           Type: A
+  #       RoutingPolicy: MULTIVALUE
+  # DataplugDbService:
+  #   Type: 'AWS::ECS::Service'
+  #   Properties:
+  #     ServiceName: DataplugDb
+  #     Cluster: !Ref ECSCluster
+  #     CapacityProviderStrategy:
+  #       - Base: 0
+  #         CapacityProvider: !Ref CapacityProvider
+  #         Weight: 1
+  #     NetworkConfiguration:
+  #       AwsvpcConfiguration:
+  #         AssignPublicIp: ENABLED
+  #         SecurityGroups:
+  #           - !GetAtt 
+  #             - ServiceSecurityGroup
+  #             - GroupId
+  #         Subnets:
+  #           - subnet-0f069571b9e806b6e
+  #           - subnet-06b86ae67399c073b
+  #     DeploymentConfiguration:
+  #       MaximumPercent: 200
+  #       MinimumHealthyPercent: 75
+  #     DesiredCount: !Ref DesiredCount
+  #     TaskDefinition: !Ref DataplugDbTaskDefinition
+  #     ServiceRegistries:
+  #       - RegistryArn: !GetAtt 
+  #           - DataplugDbDiscoveryService
+  #           - Arn
+  # DataplugDbTaskDefinition:
+  #   Type: 'AWS::ECS::TaskDefinition'
+  #   Properties:
+  #     Family: DataplugDb
+  #     Cpu: !Ref ContainerCpu
+  #     Memory: !Ref ContainerMemory
+  #     NetworkMode: awsvpc
+  #     RequiresCompatibilities:
+  #       - FARGATE
+  #     ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+  #     ContainerDefinitions:
+  #       - Name: DataplugDb
+  #         Cpu: !Ref ContainerCpu
+  #         Memory: !Ref ContainerMemory
+  #         Image: 'public.ecr.aws/docker/library/mongo:latest'
+  #         PortMappings:
+  #           - ContainerPort: '27017'
+  #             HostPort: '27018'
+  #         LogConfiguration:
+  #           LogDriver: awslogs
+  #           Options:
+  #             awslogs-group: !Ref LogGroup
+  #             awslogs-region: !Ref 'AWS::Region'
+  #             awslogs-stream-prefix: ecs
+
+
+  # Frontend User Dashboard:
+  FrontendService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      ServiceName: Frontend
+      Cluster: !Ref ECSCluster
+      CapacityProviderStrategy:
+        - Base: 0
+          CapacityProvider: !Ref CapacityProvider
+          Weight: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt 
+              - ServiceSecurityGroup
+              - GroupId
+          Subnets:
+            - subnet-0f069571b9e806b6e
+            - subnet-06b86ae67399c073b
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref FrontendTaskDefinition
+      LoadBalancers:
+        - ContainerName: Frontend
+          ContainerPort: 3000
+          TargetGroupArn: !Ref FrontendTargetGroup
+  FrontendTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: Frontend
+      Cpu: 1024 # Needed increased resources to run.
+      Memory: 8192
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+      ContainerDefinitions:
+        - Name: Frontend
+          Cpu: 1024
+          Memory: 8192
+          Image: '429105560611.dkr.ecr.us-east-1.amazonaws.com/user-frontend'
+          PortMappings:
+            - ContainerPort: '3000'
+              HostPort: '3000'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+          Environment:
+            # - Name: REACT_APP_USER_AGENT_CONTROLLER_BASE_URL
+            #   Value: !Sub "http://user${UserUniqueIdSuffix}.sharetrace.us:9080"
+            # - Name: REACT_APP_SERVICE_PROVIDER_AGENT_BASE_URL
+            #   Value: "http://localhost:8021" # TODO
+            # - Name: REACT_APP_DP_BASE_URL
+            #   Value: !Sub "http://user${UserUniqueIdSuffix}.sharetrace.us:8001"
+            # - Name: REACT_APP_BASE_URL
+            #   Value: !Sub "http://user${UserUniqueIdSuffix}.sharetrace.us:3000"
+            # - Name: REACT_APP_PORT
+            #   Value: 3000
+            - Name: PORT
+              Value: 3000
+            - Name: REACT_APP_USER_CONTROLLER_BASE_URL
+              Value: !Sub "http://user${UserUniqueIdSuffix}.sharetrace.us:9080"
+
+
+  ServiceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security group for service
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+  LogGroup:
+    Type: 'AWS::Logs::LogGroup'
+
+
+  # FL Client:
+  FLClientDiscoveryService:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      Name: fl-client
+      Description: ''
+      NamespaceId: !Ref DiscoveryNamespace
+      DnsConfig:
+        DnsRecords:
+          - TTL: 60
+            Type: A
+        RoutingPolicy: MULTIVALUE
+  FLClientService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      ServiceName: FLClient
+      Cluster: !Ref ECSCluster
+      CapacityProviderStrategy:
+        - Base: 0
+          CapacityProvider: !Ref CapacityProvider
+          Weight: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt 
+              - ServiceSecurityGroup
+              - GroupId
+          Subnets:
+            - subnet-0f069571b9e806b6e
+            - subnet-06b86ae67399c073b
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref FLClientTaskDefinition
+      ServiceRegistries:
+        - RegistryArn: !GetAtt 
+            - FLClientDiscoveryService
+            - Arn
+      LoadBalancers:
+        - ContainerName: FLClient
+          ContainerPort: 4600
+          TargetGroupArn: !Ref FLClientTargetGroup
+  FLClientTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: FLClient
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+      ContainerDefinitions:
+        - Name: FLClient
+          Cpu: !Ref ContainerCpu
+          Memory: !Ref ContainerMemory
+          Image: '429105560611.dkr.ecr.us-east-1.amazonaws.com/fl-client'
+          PortMappings:
+            - ContainerPort: '4600'
+              HostPort: '4600'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+
