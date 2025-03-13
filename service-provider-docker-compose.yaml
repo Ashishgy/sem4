@@ -1,0 +1,105 @@
+version: "3.9.6"
+name: nsf-service-provider-employer-demo
+services:
+
+  frontend:
+    build: "./service-provider/frontend-sp"
+    container_name: sp-frontend
+    ports:
+      - 5001:5000
+    depends_on:
+      - backend_db
+    networks:
+      - network
+    environment:
+      REACT_APP_BACKEND_BASE_URL: http://localhost:9081
+      PORT: 5000
+
+  flserver:
+      build:
+        context: "./service-provider/FLserver"
+      container_name: flserver
+      ports:
+        - 4500:4500
+      networks:
+        - network
+
+  controller:
+    build: "./service-provider/backend-sp"
+    container_name: service-provider-controller
+    ports:
+      - 9081:9081
+    depends_on:
+      - acapy_agent
+    networks:
+      - network
+    environment:
+      MONGO_DB_URI: mongodb://backend_db:27017
+      AGENT_URL: http://acapy_agent:8021
+      SKIP_VERIFICATION: "${SKIP_VERIFICATION}"
+
+  backend_db:
+    image: mongo:latest
+    container_name: sp-backend-mongo-db
+    ports:
+      - 27018:27017
+    networks:
+      - network
+    volumes:
+      - backend_mongodb_data:/data/db
+  
+  acapy_agent:
+    image: ghcr.io/hyperledger/aries-cloudagent-python:py3.9-indy-1.16.0-0.10.4
+    container_name: service-provider-acapy-agent
+    ports:
+      - 9021:8021
+      - 9020:8020
+    depends_on:
+     - acapy_wallet_db
+    networks:
+      - network
+    # TODO comment arg meanings:
+    # --endpoint is used to communicate to other agents, so it must be resolvable outside of the docker compose network.
+    command: >
+      start
+      --log-level 'debug'
+      --inbound-transport http 0.0.0.0 8020
+      --outbound-transport http
+      --endpoint 'http://host.docker.internal:9020'
+      --webhook-url 'http://host.docker.internal:9081/webhook'
+      --label 'service-provider.agent'
+      --admin-insecure-mode
+      --admin 0.0.0.0 8021
+      --genesis-url 'http://test.bcovrin.vonx.io/genesis'
+      --log-level 'info'
+      --auto-accept-invites --auto-accept-requests --auto-ping-connection --auto-respond-credential-proposal --auto-respond-credential-offer --auto-respond-credential-request --auto-verify-presentation --auto-store-credential
+      --auto-provision
+      --wallet-type askar
+      --wallet-name service-provider-wallet
+      --wallet-key wallet-password
+      --wallet-storage-type postgres_storage
+      --wallet-storage-config '{"url":"acapy_wallet_db:5432","max_connections":5, "wallet_scheme":"DatabasePerWallet"}'
+      --wallet-storage-creds '{"account":"postgres","password":"postgres","admin_account":"postgres","admin_password":"postgres"}'
+  
+  acapy_wallet_db:
+    image: postgres:14.1-alpine
+    container_name: service-provider-acapy-postgres-db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5434:5432
+    networks:
+      - network
+    volumes: 
+      - postgres_data_acapy_wallet:/var/lib/postgresql/data
+
+networks:
+  network:
+    driver: bridge
+
+volumes:
+  backend_mongodb_data:
+  postgres_data_acapy_wallet:
+    driver: local

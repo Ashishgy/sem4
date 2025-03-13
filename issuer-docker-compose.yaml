@@ -1,0 +1,86 @@
+version: "3.9"
+name: issuer
+services:
+
+  frontend:
+    build: "./issuer/issuer-frontend"
+    container_name: issuer-frontend
+    ports:
+      - 3009:3009
+    networks:
+      - network
+    environment:
+      REACT_APP_BACKEND_BASE_URL: "http://localhost:9082"
+      PORT: 3009
+
+  controller:
+    build:
+      context: "./issuer/issuer-controller"
+    container_name: issuer-controller
+    ports:
+      - 9082:9082
+    depends_on:
+      - acapy_agent
+    networks:
+      - network
+    environment:
+      AGENT_URL: http://acapy_agent:9091
+      CRED_DEF_ID: "${CRED_DEF_ID}"
+
+  acapy_agent:
+    image: ghcr.io/hyperledger/aries-cloudagent-python:py3.9-indy-1.16.0-0.10.4
+    container_name: issuer-acapy-agent
+    ports:
+      - 9091:9091
+      - 9090:9090
+    depends_on:
+     - acapy_wallet_db
+    networks:
+      - network
+    # THE NGROK_AGENT_ENDPOINT ENV VAR IS FROM THE .ENV FILE IN THE DIRECTORY OF THIS COMPOSE FILE: 
+    #  https://stackoverflow.com/questions/29377853/how-can-i-use-environment-variables-in-docker-compose 
+    command: >
+      start
+      --seed 0923456ERFDZSXCVTYUO9986OREDFBBB
+      --debug-credentials
+      --log-level 'debug'
+      --inbound-transport http 0.0.0.0 9090
+      --outbound-transport http
+      --endpoint '${NGROK_AGENT_ENDPOINT}'
+      --webhook-url 'http://host.docker.internal:9082/webhook'
+      --label 'issuer.agent'
+      --admin-insecure-mode
+      --admin 0.0.0.0 9091
+      --genesis-url 'http://test.bcovrin.vonx.io/genesis'
+      --log-level 'debug'
+      --auto-accept-invites
+      --auto-provision
+      --wallet-type askar
+      --wallet-name user-wallet
+      --wallet-key wallet-password
+      --wallet-storage-type postgres_storage
+      --wallet-storage-config '{"url":"acapy_wallet_db:5432","max_connections":5, "wallet_scheme":"DatabasePerWallet"}'
+      --wallet-storage-creds '{"account":"postgres","password":"postgres","admin_account":"postgres","admin_password":"postgres"}'
+
+  acapy_wallet_db:
+    image: postgres:14.1-alpine
+    container_name: issuer-acapy-postgres-db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5488:5432
+    networks:
+      - network
+    volumes: 
+      - postgres_data:/var/lib/postgresql/data
+
+networks:
+  network:
+    driver: bridge
+
+volumes:
+  controller_mongodb_data:
+  postgres_data:
+    driver: local

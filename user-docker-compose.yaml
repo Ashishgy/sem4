@@ -1,0 +1,106 @@
+version: "3.9.6"
+name: nsf-user-employee-demo
+services:
+
+  frontend:
+    build: "./user/frontend-user"
+    container_name: user-frontend  
+    ports:
+      - 3001:3000 # Using port 3001 instead of 3000 so that frontend team can run frontend locally as well.
+    networks:
+      - network
+    environment:
+      REACT_APP_USER_CONTROLLER_BASE_URL: "http://localhost:9080"
+      PORT: 3000
+
+  controller:
+    build:
+      context: "./user/backend-user"
+    container_name: user-controller
+    ports:
+      - 9080:9080
+    depends_on:
+      - controller_db
+      - acapy_agent
+    networks:
+      - network
+    environment:
+      AGENT_URL: http://acapy_agent:9031
+      MONGO_DB_URI: mongodb://controller_db:27017
+
+  flclient:
+      build:
+        context: "./user/FLclient"
+      container_name: flclient
+      ports:
+        - 4600:4600
+      networks:
+        - network
+
+  controller_db:
+    image: mongo:latest
+    container_name: user-controller-mongo-db
+    ports:
+      - 37017:27017
+    networks:
+      - network
+    volumes:
+      - controller_mongodb_data:/data/db
+  
+  acapy_agent:
+    image: ghcr.io/hyperledger/aries-cloudagent-python:py3.9-indy-1.16.0-0.10.4
+    container_name: user-acapy-agent
+    ports:
+      - 9031:9031
+      - 9030:9030
+    depends_on:
+     - acapy_wallet_db
+    networks:
+      - network
+    # TODO comment arg meanings:
+    # --endpoint is used to communicate to other agents, so it must be resolvable outside of the docker compose network.
+    # keep teh --webhook-url hostname to the host's localhost instead of a service reference, because that way we can swap out a locally running controller.
+    #--auto-accept-invites --auto-accept-requests --auto-ping-connection --auto-respond-messages --auto-respond-credential-proposal --auto-respond-credential-offer --auto-respond-credential-request --auto-verify-presentation --auto-store-credential
+    command: >
+      start
+      --log-level 'debug'
+      --inbound-transport http 0.0.0.0 9030
+      --outbound-transport http
+      --endpoint 'http://host.docker.internal:9030'
+      --webhook-url 'http://host.docker.internal:9080/webhook'
+      --label 'user.agent'
+      --admin-insecure-mode
+      --admin 0.0.0.0 9031
+      --genesis-url 'http://test.bcovrin.vonx.io/genesis'
+      --log-level 'info'
+      --auto-accept-invites --auto-accept-requests --auto-ping-connection --auto-respond-credential-proposal --auto-respond-credential-offer --auto-respond-credential-request --auto-verify-presentation --auto-store-credential
+      --auto-provision
+      --wallet-type askar
+      --wallet-name user-wallet
+      --wallet-key wallet-password
+      --wallet-storage-type postgres_storage
+      --wallet-storage-config '{"url":"acapy_wallet_db:5432","max_connections":5, "wallet_scheme":"DatabasePerWallet"}'
+      --wallet-storage-creds '{"account":"postgres","password":"postgres","admin_account":"postgres","admin_password":"postgres"}'
+
+  acapy_wallet_db:
+    image: postgres:14.1-alpine
+    container_name: user-acapy-postgres-db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5433:5432
+    networks:
+      - network
+    volumes: 
+      - postgres_data:/var/lib/postgresql/data
+
+networks:
+  network:
+    driver: bridge
+
+volumes:
+  controller_mongodb_data:
+  postgres_data:
+    driver: local
